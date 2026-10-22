@@ -104,7 +104,7 @@ For tools your projects need (Python, Go, a database client…):
 EXTRA_APT_PACKAGES=python3 python3-venv golang-go postgresql-client
 ```
 
-then `make build`. For anything more involved, extend the image:
+then `pi-foundry build`. For anything more involved, extend the image:
 
 ```dockerfile title="Dockerfile.local"
 FROM pi-foundry:local
@@ -128,7 +128,6 @@ services:
   pi:
     volumes:
       - ~/.ssh/known_hosts:/home/pi/.ssh/known_hosts:ro
-      - ~/.gitconfig:/home/pi/.gitconfig:ro
       - ./corp-ca.pem:/etc/ssl/certs/corp-ca.pem:ro
     environment:
       NODE_EXTRA_CA_CERTS: /etc/ssl/certs/corp-ca.pem

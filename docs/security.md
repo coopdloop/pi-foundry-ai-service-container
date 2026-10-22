@@ -24,9 +24,17 @@ Recommended:
 2. Prefer **Privileged Identity Management (PIM)** for admin roles, so your account isn't standing-Owner while you code.
 3. Stay in **ask** or **plan** mode for sensitive repositories, and read `az` commands before approving them.
 
+## Docker socket
+
+The agent can use your Docker (see [Dev tools & host access](dev-environment.md#docker)). Docker access is **equivalent to admin on the Docker host**: a container started through it can mount any path the daemon can see. In Ask mode, Docker commands that change things require approval. To remove Docker access entirely:
+
+```dotenv title=".env"
+DOCKER_SOCKET=./config/no-docker
+```
+
 ## Container boundary
 
-- The agent sees **only** the project directory you launch from, your pi config directory, and the container's own files.
+- The agent sees the project directory you launch from (at `/workspace`), your pi config directory, a read-only copy of your git config, and the container's own files, **plus anything reachable through your Docker** (see above).
 - It runs as an unprivileged user whose UID matches yours, so it can do to your project what you can do.
 - It has **unrestricted outbound network** access, which it needs to reach Foundry and Entra ID. Add egress controls at the Docker or network level if you need them.
 

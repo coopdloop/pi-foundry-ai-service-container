@@ -19,6 +19,9 @@ run() {
 echo "== versions"
 run bash -c 'pi --version && az version --query "\"azure-cli\"" -o tsv && node --version'
 
+echo "== dev tools"
+run bash -c 'set -e; for c in python3 pip uv node npm pnpm make gcc g++ git docker rg fd jq sqlite3; do command -v "$c" >/dev/null || { echo "FAIL: missing $c"; exit 1; }; done; docker compose version >/dev/null; docker buildx version >/dev/null; echo ok'
+
 echo "== permission classifier"
 run node /tests/permissions.test.mjs
 

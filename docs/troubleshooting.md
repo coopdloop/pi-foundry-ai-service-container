@@ -1,6 +1,6 @@
 # Troubleshooting
 
-**Start with `pi-foundry doctor`** (or `make doctor`). It checks each step in order and prints a fix under the first failure.
+**Start with `pi-foundry doctor`**. It checks each step in order and prints a fix under the first failure.
 
 ## Errors from Foundry
 
@@ -60,6 +60,11 @@ pi's default request timeout is generous. If a proxy kills idle connections, set
 
 | Symptom | Fix |
 |---|---|
+| `docker: permission denied … docker.sock` | The socket's group couldn't be detected. Set `HOST_GID` to the socket's group, or check that `DOCKER_SOCKET` points at a real socket. |
+| `docker run -v /workspace:…` mounts an empty folder | The daemon runs on the host: use `$HOST_WORKSPACE` instead of `/workspace`. |
+| `bind source path does not exist: …/.gitconfig` | Only when running `docker compose` directly without a `~/.gitconfig`. Use the launcher, or set `GIT_CONFIG_HOST=./config/empty.gitconfig`. |
+| Windows: `exec … no such file or directory` / `$'\r': command not found` | The repo was checked out with CRLF line endings before `.gitattributes` existed. Run `git rm --cached -r . && git reset --hard` in the repo, then `pi-foundry rebuild`. |
+| Windows: slow file access | Projects on `C:\` go through a file-sharing layer. Keep projects inside WSL and run `./pi-foundry` from WSL for native speed. |
 | Files created by the agent are owned by root | Your workspace is root-owned, or you use rootful Docker with an unusual setup. Set `HOST_UID`/`HOST_GID` in `.env`. |
 | `~/.azure` or `~/.pi-foundry/agent` created as root on Linux | Docker creates missing bind sources as root. Create them first, or `sudo chown -R $USER` them. |
 | `git` says "dubious ownership" | Already handled (`safe.directory=*`). If you override the image, keep that setting. |

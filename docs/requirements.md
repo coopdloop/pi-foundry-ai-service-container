@@ -3,7 +3,7 @@
 pi-foundry is a **client**. It never creates, changes or deletes anything in Azure. Before you set it up, make sure the following already exists, provisioned the way your organization manages Azure (portal, Bicep, Terraform, platform team).
 
 !!! success "Quick check"
-    After building the image, `make doctor` checks every item on this page and names the one that's missing.
+    After building the image, `pi-foundry doctor` checks every item on this page and names the one that's missing.
 
 ## 1. A Foundry resource
 

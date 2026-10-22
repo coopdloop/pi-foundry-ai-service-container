@@ -32,7 +32,9 @@ Configure pi-foundry with **environment variables** (in `.env` next to `compose.
 
 | Variable | Default | Description |
 |---|---|---|
-| `PI_WORKSPACE` | current directory | Project to mount (same path inside the container). |
+| `PI_WORKSPACE` | *set by the launcher* | Host project directory mounted at `/workspace`. |
+| `DOCKER_SOCKET` | `/var/run/docker.sock` | Host Docker socket to mount. `./config/no-docker` disables Docker access. Taken from `DOCKER_HOST` automatically for rootless Docker. |
+| `GIT_CONFIG_HOST` | `~/.gitconfig` | Git config to copy in. The launcher falls back to an empty file if you don't have one. |
 | `PI_CONFIG_DIR` | `~/.pi-foundry/agent` | Your pi config + sessions. See [Customizing pi](customizing.md). |
 | `AZURE_CONFIG_HOST_DIR` | `~/.azure` | Host az login to copy. Point at an empty directory to disable. |
 | `HOST_UID`, `HOST_GID` | *workspace owner* | Override the container user's IDs. |

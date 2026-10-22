@@ -198,8 +198,51 @@ theme_args() {
   THEME_ARGS+=(--use-theme "$want")
 }
 
+# --- host integration ------------------------------------------------------
+
+# A filesystem-safe id for the host project path, e.g. C:\src\app -> c--src-app
+project_slug() {
+  local p="${HOST_WORKSPACE:-}"
+  [[ -n "$p" ]] || return 1
+  p="$(tr '[:upper:]' '[:lower:]' <<<"$p")"
+  p="${p//[\/\\:]/-}"
+  p="$(sed -E 's/[^a-z0-9._-]+/-/g; s/^-+//; s/-+$//' <<<"$p")"
+  [[ -n "$p" ]] && printf '%s' "$p"
+}
+
+# Copy the host .gitconfig and drop settings that point at host-only programs.
+import_git_config() {
+  local src=/host-gitconfig dst="$HOME/.gitconfig"
+  [[ -f "$src" && -s "$src" ]] || return 0
+  cp "$src" "$dst" 2>/dev/null || return 0
+  git config --file "$dst" --unset-all credential.helper 2>/dev/null || true
+  local key val
+  for key in core.editor core.sshcommand core.pager gpg.program gpg.ssh.program core.fsmonitor diff.tool merge.tool; do
+    val="$(git config --file "$dst" --get "$key" 2>/dev/null || true)"
+    [[ -n "$val" ]] || continue
+    # Keep it only if the program exists in the container.
+    command -v "${val%% *}" >/dev/null 2>&1 || git config --file "$dst" --unset-all "$key" 2>/dev/null || true
+  done
+  # Signing needs keys that live on the host; don't fail every commit.
+  if [[ "$(git config --file "$dst" --get commit.gpgsign 2>/dev/null)" == "true" ]] && ! command -v gpg >/dev/null; then
+    git config --file "$dst" commit.gpgsign false
+  fi
+}
+
+prepare_env() {
+  import_git_config
+  local slug
+  if slug="$(project_slug)"; then
+    # Every project is mounted at /workspace, so give each its own sessions.
+    export PI_CODING_AGENT_SESSION_DIR="$AGENT_DIR/sessions/$slug"
+    # Keep Linux virtualenvs out of the shared project folder.
+    export UV_PROJECT_ENVIRONMENT="$HOME/.cache/venvs/$slug"
+  fi
+}
+
 run_pi() {
   seed_agent_dir
+  prepare_env
   setup_auth
   THEME_ARGS=()
   theme_args "$@"
@@ -244,6 +287,7 @@ case "$cmd" in
     ;;
   shell|bash)
     shift
+    prepare_env
     setup_auth
     exec bash "$@"
     ;;

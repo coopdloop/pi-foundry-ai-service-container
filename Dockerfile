@@ -15,14 +15,34 @@ ARG EXTRA_APT_PACKAGES=""
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Base tooling the agent uses constantly.
+# Everyday development tooling: shell utils, compilers, Python, editors.
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
-      bash ca-certificates curl git gnupg gosu jq less lsb-release make \
-      openssh-client procps ripgrep fd-find unzip xz-utils tini ${EXTRA_APT_PACKAGES} \
+      bash ca-certificates curl wget git gnupg gosu jq less lsb-release make \
+      openssh-client procps ripgrep fd-find tree file rsync unzip zip xz-utils tini \
+      build-essential pkg-config \
+      python3 python3-venv python3-pip python3-dev \
+      sqlite3 nano vim-tiny \
+      ${EXTRA_APT_PACKAGES} \
  && ln -sf /usr/bin/fdfind /usr/local/bin/fd \
+ && ln -sf /usr/bin/python3 /usr/local/bin/python \
  && git config --system --add safe.directory '*' \
  && rm -rf /var/lib/apt/lists/*
+
+# Docker CLI + compose/buildx plugins. They talk to the host's Docker through
+# the mounted socket; no daemon runs in this image.
+RUN install -m 0755 -d /etc/apt/keyrings \
+ && curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg \
+ && chmod a+r /etc/apt/keyrings/docker.gpg \
+ && printf 'Types: deb\nURIs: https://download.docker.com/linux/debian\nSuites: %s\nComponents: stable\nArchitectures: %s\nSigned-by: /etc/apt/keyrings/docker.gpg\n' \
+      "$(lsb_release -cs)" "$(dpkg --print-architecture)" > /etc/apt/sources.list.d/docker.sources \
+ && apt-get update \
+ && apt-get install -y --no-install-recommends docker-ce-cli docker-compose-plugin docker-buildx-plugin \
+ && rm -rf /var/lib/apt/lists/* \
+ && docker --version
+
+# uv: fast Python package/project manager (also installs other Python versions).
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /usr/local/bin/
 
 # Azure CLI from Microsoft's apt repo (amd64 + arm64).
 RUN mkdir -p /etc/apt/keyrings \
@@ -36,9 +56,9 @@ RUN mkdir -p /etc/apt/keyrings \
  && az version -o tsv >/dev/null
 
 # pi itself, always a fresh install from npm.
-RUN npm install -g --ignore-scripts --no-fund --no-audit "@earendil-works/pi-coding-agent@${PI_VERSION}" \
+RUN npm install -g --ignore-scripts --no-fund --no-audit "@earendil-works/pi-coding-agent@${PI_VERSION}" pnpm \
  && npm cache clean --force \
- && pi --version
+ && pi --version && pnpm --version
 
 # Non-root user. The entrypoint remaps its UID/GID to match your workspace
 # so files the agent writes are owned by you on the host.
@@ -61,7 +81,15 @@ ENV PI_FOUNDRY_HOME=/opt/pi-foundry \
     AZURE_CORE_COLLECT_TELEMETRY=false \
     AZURE_CORE_NO_COLOR=1 \
     NODE_USE_ENV_PROXY=1 \
-    COLORTERM=truecolor
+    COLORTERM=truecolor \
+    PIP_BREAK_SYSTEM_PACKAGES=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    UV_LINK_MODE=copy \
+    NPM_CONFIG_CACHE=/home/pi/.cache/npm \
+    NPM_CONFIG_UPDATE_NOTIFIER=false \
+    PNPM_HOME=/home/pi/.local/share/pnpm \
+    npm_config_store_dir=/home/pi/.cache/pnpm-store \
+    PATH=/home/pi/.local/bin:/home/pi/.local/share/pnpm:$PATH
 
 LABEL org.opencontainers.image.title="pi-foundry" \
       org.opencontainers.image.description="pi coding agent with keyless (Entra ID) access to Azure AI Foundry models" \

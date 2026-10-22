@@ -1,0 +1,21 @@
+# Keep LF everywhere so scripts copied into the Linux image work even when
+# the repo is cloned on Windows with core.autocrlf=true.
+* text=auto eol=lf
+
+*.sh            text eol=lf
+Dockerfile      text eol=lf
+docker/*        text eol=lf
+pi-foundry      text eol=lf
+*.mjs           text eol=lf
+*.ts            text eol=lf
+*.json          text eol=lf
+*.yaml          text eol=lf
+*.yml           text eol=lf
+
+# Windows launchers run on the host and expect CRLF.
+*.ps1           text eol=crlf
+*.cmd           text eol=crlf
+
+*.png           binary
+*.jpg           binary
+*.ico           binary

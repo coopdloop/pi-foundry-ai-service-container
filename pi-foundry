@@ -1,0 +1,80 @@
+#!/usr/bin/env bash
+# pi-foundry launcher for macOS, Linux, WSL and Git Bash on Windows.
+# Run it from any project directory; that directory becomes /workspace.
+#
+#   pi-foundry [pi args]       start pi (or doctor, login, models, shell, ...)
+#   pi-foundry build           build the image with the newest pi
+#   pi-foundry rebuild         rebuild everything from scratch
+#   pi-foundry update          git pull this repo, then build
+#   pi-foundry install         put pi-foundry on your PATH (~/.local/bin)
+set -euo pipefail
+
+# Resolve this repo even when the launcher is symlinked onto PATH.
+src="${BASH_SOURCE[0]}"
+while [[ -L "$src" ]]; do
+  dir="$(cd -P "$(dirname "$src")" && pwd)"
+  src="$(readlink "$src")"
+  [[ "$src" == /* ]] || src="$dir/$src"
+done
+REPO="$(cd -P "$(dirname "$src")" && pwd)"
+
+case "$(uname -s)" in
+  Darwin) HOST_OS=darwin ;;
+  Linux) grep -qi microsoft /proc/version 2>/dev/null && HOST_OS=wsl || HOST_OS=linux ;;
+  MINGW* | MSYS* | CYGWIN*) HOST_OS=windows ;;
+  *) HOST_OS=linux ;;
+esac
+
+# Git Bash: hand Docker native Windows paths and stop MSYS from rewriting them.
+winpath() {
+  if [[ "$HOST_OS" == windows ]] && command -v cygpath >/dev/null; then cygpath -m "$1"; else printf '%s' "$1"; fi
+}
+if [[ "$HOST_OS" == windows ]]; then
+  export MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*' MSYS2_ENV_CONV_EXCL='*'
+fi
+REPO_HOST="$(winpath "$REPO")"
+
+case "${1:-}" in
+  build) shift; exec "$REPO/scripts/build.sh" "$@" ;;
+  rebuild) shift; exec "$REPO/scripts/build.sh" --pull --no-cache "$@" ;;
+  update)
+    shift
+    git -C "$REPO" pull --ff-only
+    exec "$REPO/scripts/build.sh" "$@"
+    ;;
+  install)
+    bin="$HOME/.local/bin"
+    mkdir -p "$bin"
+    ln -sf "$REPO/pi-foundry" "$bin/pi-foundry"
+    echo "Linked $bin/pi-foundry -> $REPO/pi-foundry"
+    case ":$PATH:" in
+      *":$bin:"*) ;;
+      *) echo "Add this to your shell profile:  export PATH=\"\$HOME/.local/bin:\$PATH\"" ;;
+    esac
+    exit 0
+    ;;
+esac
+
+export HOST_OS
+PI_WORKSPACE="$(winpath "$PWD")"
+export PI_WORKSPACE
+
+if [[ -z "${GIT_CONFIG_HOST:-}" ]]; then
+  if [[ -f "$HOME/.gitconfig" ]]; then
+    GIT_CONFIG_HOST="$(winpath "$HOME/.gitconfig")"
+  else
+    GIT_CONFIG_HOST="$REPO_HOST/config/empty.gitconfig"
+  fi
+fi
+export GIT_CONFIG_HOST
+
+# Rootless Docker / custom daemons: mount the socket DOCKER_HOST points at.
+if [[ -z "${DOCKER_SOCKET:-}" && "${DOCKER_HOST:-}" == unix://* ]]; then
+  export DOCKER_SOCKET="${DOCKER_HOST#unix://}"
+fi
+
+tty_args=()
+[[ -t 0 && -t 1 ]] || tty_args=(-T)
+
+exec docker compose --project-directory "$REPO_HOST" -f "$REPO_HOST/compose.yaml" \
+  run --rm "${tty_args[@]}" pi "$@"

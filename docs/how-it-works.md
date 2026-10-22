@@ -19,7 +19,7 @@ flowchart LR
         arm[ARM<br/>management.azure.com]
         fdy[Foundry resource<br/>*.services.ai.azure.com]
     end
-    proj <--> pi
+    proj <-- /workspace --> pi
     cfg <--> pi
     azh -. read-only copy .-> pf
     ep --> pf --> pi --> ext
@@ -30,15 +30,16 @@ flowchart LR
 
 ## Startup
 
-1. **`entrypoint.sh`** (root, briefly): matches the `pi` user's UID/GID to the owner of your project directory so files the agent writes belong to you, fixes ownership of the volumes, then drops privileges with `gosu`. Under rootless Docker/Podman it stays container-root, which is your host user.
-2. **`pi-foundry`** picks an identity ([Authentication](authentication.md)), checks it by requesting a token, and starts `pi -e /opt/pi-foundry/extension`.
-3. **The extension** loads before pi's UI starts:
+1. **The launcher** (`pi-foundry` / `pi-foundry.cmd`) runs `docker compose run` with your current directory as `PI_WORKSPACE`, your OS, and your git config path.
+2. **`entrypoint.sh`** (root, briefly): matches the `pi` user's UID/GID to the owner of `/workspace` so files the agent writes belong to you (Windows mounts are world-writable, so the default user is kept), joins the group that owns the Docker socket, fixes ownership of the volumes, then drops privileges with `gosu`. Under rootless Docker/Podman it stays container-root, which is your host user.
+3. **`pi-foundry`** (in the container) imports your git config, sets a per-project session folder and uv environment, picks an identity ([Authentication](authentication.md)), checks it by requesting a token, and starts `pi -e /opt/pi-foundry/extension`.
+4. **The extension** loads before pi's UI starts:
     - reads `foundry.json` and `FOUNDRY_*` variables
     - **discovers** the resource and its deployments through ARM (`az cognitiveservices account deployment list`), cached for 10 minutes
     - **classifies** each deployment: `Anthropic` → Messages API at `/anthropic`; `OpenAI` with the `responses` capability → Responses API at `/openai/v1`; chat-only `OpenAI` → Chat Completions; embeddings/images/audio → skipped
     - looks up each model in **pi's built-in catalog** for context window, max output, reasoning levels, image input and pricing
     - registers one pi provider, **`foundry`**, with a per-request auth resolver
-4. On session start, if you haven't chosen a model, it selects the strongest coding deployment.
+5. On session start, if you haven't chosen a model, it selects the strongest coding deployment.
 
 ## Requests
 

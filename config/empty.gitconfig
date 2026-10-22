@@ -1,0 +1,1 @@
+# Used when the host has no ~/.gitconfig, so Docker never creates a directory in its place.

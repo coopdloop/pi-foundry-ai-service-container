@@ -172,6 +172,31 @@ export default async function foundryExtension(pi: ExtensionAPI) {
 		await pi.setModel(model);
 	});
 
+	// Tell the model where it is: a Linux container sharing the project with
+	// the user's machine. Prevents host-only commands and broken docker -v paths.
+	const hostOs = { darwin: "macOS", windows: "Windows", linux: "Linux", wsl: "Windows (WSL)" }[
+		String(process.env.HOST_OS || "").toLowerCase()
+	];
+	const hostWs = process.env.HOST_WORKSPACE;
+	if (hostWs || hostOs) {
+		const envNote = [
+			`You run inside a Debian Linux container. The project at /workspace is shared with the user's ${hostOs ?? "host"} machine${hostWs ? `, where it lives at ${hostWs}` : ""}.`,
+			"- Available: git, python3 + pip, uv, node + npm + pnpm, make, gcc/g++, ripgrep, fd, jq, sqlite3, and the docker CLI (connected to the user's Docker).",
+			"- Host-only programs (Homebrew, Windows .exe tools, the user's local virtualenvs) are not available. Install Linux equivalents instead.",
+			"- Prefer `uv` for Python: its project environments are kept outside /workspace, so the user's own .venv is never touched. Avoid creating .venv inside /workspace.",
+			"- node_modules built here contain Linux binaries; mention this if the user also runs the project natively.",
+			hostWs
+				? `- For docker bind mounts use the host path: \`docker run -v "$HOST_WORKSPACE:/src" ...\` (not /workspace), because the Docker daemon runs on the host.`
+				: "",
+		]
+			.filter(Boolean)
+			.join("\n");
+		pi.on("before_agent_start", async (event: any) => {
+			const opts = event?.systemPromptOptions;
+			if (opts) opts.sections = { ...(opts.sections || {}), "pi-foundry-environment": envNote };
+		});
+	}
+
 	pi.registerCommand("foundry", {
 		description: "Azure AI Foundry status. `/foundry refresh` re-discovers deployments.",
 		getArgumentCompletions: (prefix: string) =>

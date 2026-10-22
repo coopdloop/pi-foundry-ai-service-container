@@ -10,6 +10,8 @@
 - **Auto-discovery.** Finds your GPT and Claude deployments and routes each to the right API (Responses or Messages).
 - **Any identity.** Reuses your host `az login`, or device code, service principal, workload identity, or managed identity.
 - **Always-fresh pi.** Each build installs the newest release. Your config, extensions, skills and sessions live in a mounted directory.
+- **A real dev box.** Python + uv, Node + pnpm, make, gcc, and the Docker CLI wired to your Docker. Your git identity comes along.
+- **macOS, Linux, WSL and Windows.** One `pi-foundry` command everywhere; your project is mounted at `/workspace`.
 - **Permission modes.** Ask / accept edits / plan / auto, cycled with Shift+Tab like Claude Code. Starts in Ask.
 - **Polished out of the box.** Foundry Dark/Light themes that follow your terminal background.
 - **`doctor`.** Checks sign-in, RBAC, DNS and every deployment, and tells you what to fix.
@@ -22,18 +24,20 @@
 git clone https://github.com/coopdloop/pi-foundry-ai-service-container.git
 cd pi-foundry-ai-service-container
 cp .env.example .env          # set FOUNDRY_RESOURCE if you have more than one
-make build                    # newest pi + Azure CLI + Foundry extension
-make doctor                   # verify sign-in, access, network, deployments
+./pi-foundry build            # newest pi + dev tools + Azure CLI + Foundry extension
+./pi-foundry install          # put pi-foundry on your PATH
+pi-foundry doctor             # verify sign-in, access, network, deployments
 ```
 
-Use it from any project:
+On **Windows**, use `.\pi-foundry.cmd build` and `.\pi-foundry.cmd install` from PowerShell (or `./pi-foundry` from Git Bash / WSL).
+
+Then from any project:
 
 ```bash
-alias pi-foundry='docker compose -f ~/src/pi-foundry-ai-service-container/compose.yaml run --rm pi'   # `make alias` prints yours
 cd ~/src/my-app && pi-foundry
 ```
 
-No `az` on your machine? Run `make login` once for a device-code sign-in.
+No `az` on your machine (or on Windows)? Run `pi-foundry login` once for a device-code sign-in.
 
 ## How it routes models
 
@@ -62,8 +66,10 @@ All requests use `Authorization: Bearer <Entra token>` with scope `https://ai.az
 ## Layout
 
 ```
-Dockerfile              node + Azure CLI + newest pi
-compose.yaml            mounts, env, volumes
+pi-foundry              launcher for macOS / Linux / WSL / Git Bash
+pi-foundry.cmd          launcher for Windows (runs scripts/pi-foundry.ps1)
+Dockerfile              newest pi + Python/uv, Node/pnpm, build tools, Docker CLI, Azure CLI
+compose.yaml            mounts (/workspace, docker.sock, .gitconfig), env, volumes
 docker/entrypoint.sh    UID remap, privilege drop
 docker/pi-foundry       auth bootstrap + subcommands (doctor, login, models, shell)
 extension/index.ts      pi extension: "foundry" provider with per-request Entra auth

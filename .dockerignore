@@ -8,4 +8,6 @@ mkdocs.yml
 *.md
 compose*.yaml
 Makefile
+pi-foundry
+pi-foundry.cmd
 scripts

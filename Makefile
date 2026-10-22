@@ -1,5 +1,5 @@
 # Convenience targets. Everything is plain `docker compose` underneath.
-.PHONY: help build rebuild run doctor models login shell alias docs docs-serve
+.PHONY: help build rebuild run doctor models login shell install docs docs-serve
 
 help:  ## Show targets
 	@grep -E '^[a-z-]+:.*##' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-12s %s\n", $$1, $$2}'
@@ -10,23 +10,23 @@ build:  ## Build the image with the newest pi release
 rebuild:  ## Rebuild from scratch (fresh base image, apt, az, pi)
 	./scripts/build.sh --pull --no-cache
 
-run:  ## Start pi in this repo (use the alias for other projects)
-	docker compose run --rm pi
+run:  ## Start pi in this repo (run ./pi-foundry from other projects)
+	./pi-foundry
 
 doctor:  ## Check sign-in, discovery, RBAC and network
-	docker compose run --rm pi doctor
+	./pi-foundry doctor
 
 models:  ## List Foundry deployments pi will use
-	docker compose run --rm pi models
+	./pi-foundry models
 
 login:  ## Device-code sign-in stored in a Docker volume
-	docker compose run --rm pi login
+	./pi-foundry login
 
 shell:  ## Bash inside the container (signed in)
-	docker compose run --rm pi shell
+	./pi-foundry shell
 
-alias:  ## Print a shell alias to run pi-foundry from any directory
-	@echo "alias pi-foundry='docker compose -f $(CURDIR)/compose.yaml run --rm pi'"
+install:  ## Put pi-foundry on your PATH (~/.local/bin)
+	./pi-foundry install
 
 docs:  ## Build the docs site into ./site
 	pip install -q -r docs/requirements.txt && mkdocs build --strict

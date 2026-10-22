@@ -2,14 +2,21 @@
 
 ## Run pi in any project
 
-pi-foundry mounts **the directory you run it from**. Set up an alias once:
+pi-foundry mounts **the directory you run it from** at `/workspace`. Put the launcher on your PATH once:
 
-```bash
-make alias   # prints the line below with your path
-alias pi-foundry='docker compose -f ~/src/pi-foundry-ai-service-container/compose.yaml run --rm pi'
-```
+=== "macOS / Linux / WSL"
 
-Add it to `~/.zshrc` or `~/.bashrc`, then:
+    ```bash
+    ./pi-foundry install     # links into ~/.local/bin
+    ```
+
+=== "Windows"
+
+    ```powershell
+    .\pi-foundry.cmd install  # adds the repo folder to your user PATH
+    ```
+
+Then:
 
 ```bash
 cd ~/src/my-app
@@ -35,7 +42,7 @@ All normal [pi flags](https://pi.dev) work. Anything that isn't a pi-foundry com
 | `pi-foundry shell` | Bash inside the container, signed in (for debugging) |
 | `pi-foundry version` | pi, az and node versions in the image |
 
-The same commands exist as `make doctor`, `make models`, `make login`, `make shell` inside the repo.
+Plus, on your machine: `pi-foundry build`, `rebuild`, `update` and `install`.
 
 ## Inside pi
 
@@ -50,33 +57,27 @@ The same commands exist as `make doctor`, `make models`, `make login`, `make she
 
 ## Sessions and paths
 
-Your project is mounted at the **same absolute path** inside the container as on your machine. That means:
-
-- pi keeps **separate session history per project**, as it does natively.
-- File paths in pi's output are clickable and correct on your host.
-- Files the agent creates are owned by **you** (the container user's UID/GID is matched to the project directory's owner).
+Your project is mounted at **`/workspace`** on every OS. pi-foundry still keeps **separate session history per project** (keyed by the host path), files the agent creates are owned by **you**, and the agent knows the host path as `$HOST_WORKSPACE`. See [Dev tools & host access](dev-environment.md).
 
 Sessions, settings and your customizations live in `PI_CONFIG_DIR` (default `~/.pi-foundry/agent`) and survive image rebuilds.
 
 ## Updating pi
 
 ```bash
-cd ~/src/pi-foundry-ai-service-container
-git pull          # new pi-foundry features
-make build        # newest pi release (cached until pi changes)
-make rebuild      # everything fresh: base image, apt, az, pi
+pi-foundry update     # git pull this repo + build with the newest pi
+pi-foundry build      # newest pi release (cached until pi changes)
+pi-foundry rebuild    # everything fresh: base image, apt, az, pi
 ```
 
-Pin a version with `PI_VERSION=1.4.0 make build` (or in `.env`).
+Pin a version with `PI_VERSION=1.4.0` in `.env`.
 
 ## Headless / CI
 
 ```bash
-docker compose run --rm -T \
-  -e FOUNDRY_MODE=auto \
-  -e FOUNDRY_AUTH=service-principal \
-  -e AZURE_CLIENT_ID -e AZURE_TENANT_ID -e AZURE_CLIENT_SECRET \
-  pi -p "review the diff in this branch and list risky changes"
+```bash
+export FOUNDRY_MODE=auto FOUNDRY_AUTH=service-principal
+export AZURE_CLIENT_ID=… AZURE_TENANT_ID=… AZURE_CLIENT_SECRET=…
+pi-foundry -p "review the diff in this branch and list risky changes"
 ```
 
-`-T` disables the TTY. Without a UI nothing can be approved, so set a [permission mode](permissions.md#print-mode-and-ci) that allows what the task needs (`edits` or `auto`). Use `FOUNDRY_QUIET=1` to suppress pi-foundry's own log lines.
+The launcher detects there's no terminal and runs without a TTY. Without a UI nothing can be approved, so set a [permission mode](permissions.md#print-mode-and-ci) that allows what the task needs (`edits` or `auto`). Use `FOUNDRY_QUIET=1` to suppress pi-foundry's own log lines.

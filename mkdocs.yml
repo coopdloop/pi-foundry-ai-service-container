@@ -44,6 +44,7 @@ nav:
   - Using it:
       - Daily use: usage.md
       - Permission modes: permissions.md
+      - Dev tools & host access: dev-environment.md
       - Authentication: authentication.md
       - Configuration: configuration.md
       - Customizing pi: customizing.md

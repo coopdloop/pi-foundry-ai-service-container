@@ -1,12 +1,12 @@
 # pi + Azure AI Foundry, keyless.
 #
-#   docker compose run --rm pi              # start pi in the current directory*
-#   docker compose run --rm pi doctor       # check everything
-#   docker compose run --rm pi login        # device-code sign-in (if no host az login)
+# Use the launcher, which works from any project directory on macOS, Linux,
+# WSL and Windows:
+#   ./pi-foundry               (macOS / Linux / WSL / Git Bash)
+#   .\pi-foundry.cmd           (Windows PowerShell / cmd)
 #
-# * From another project directory:
-#   docker compose -f ~/pi-foundry-ai-service-container/compose.yaml run --rm pi
-#   (tip: alias it, see README)
+# Plain compose also works from this directory:
+#   PI_WORKSPACE=/path/to/project docker compose run --rm pi
 #
 # Settings come from .env next to this file (copy .env.example).
 
@@ -22,20 +22,36 @@ services:
     image: ${PI_FOUNDRY_IMAGE:-pi-foundry:local}
     stdin_open: true
     tty: true
-    # Mount the project at the same absolute path as on the host, so pi keeps
-    # separate sessions per project and paths in output match your machine.
-    working_dir: ${PI_WORKSPACE:-${PWD}}
+    working_dir: /workspace
     volumes:
-      - ${PI_WORKSPACE:-${PWD}}:${PI_WORKSPACE:-${PWD}}
-      # Your pi config: settings.json, AGENTS.md, foundry.json, extensions/,
-      # skills/, prompts/, themes/, sessions. Customize pi here.
+      # Your project. The launcher sets PI_WORKSPACE to the directory you run it from.
+      - type: bind
+        source: ${PI_WORKSPACE:-.}
+        target: /workspace
+      # Your pi config: settings.json, AGENTS.md, foundry.json, keybindings.json,
+      # extensions/, skills/, prompts/, themes/, sessions. Customize pi here.
       - ${PI_CONFIG_DIR:-~/.pi-foundry/agent}:/home/pi/.pi/agent
       # Host az login, copied read-only at startup (never modified).
       - ${AZURE_CONFIG_HOST_DIR:-~/.azure}:/host-azure:ro
-      # Container-only sign-in (device code) and caches.
+      # Host Docker. The agent can build and run containers on your machine.
+      - type: bind
+        source: ${DOCKER_SOCKET:-/var/run/docker.sock}
+        target: /var/run/docker.sock
+      # Git identity (name, email, aliases). Copied at startup; host-only
+      # settings like credential helpers are dropped. Never modified.
+      - type: bind
+        source: ${GIT_CONFIG_HOST:-~/.gitconfig}
+        target: /host-gitconfig
+        read_only: true
+        bind:
+          create_host_path: false
+      # Container-only sign-in (device code) and tool caches (pip, uv, npm, pnpm).
       - azure:/home/pi/.azure
       - cache:/home/pi/.cache
     environment:
+      # Where the project lives on your machine (for sessions and docker -v)
+      HOST_WORKSPACE: ${PI_WORKSPACE:-}
+      HOST_OS: ${HOST_OS:-}
       # Foundry
       FOUNDRY_RESOURCE: ${FOUNDRY_RESOURCE:-}
       FOUNDRY_RESOURCE_GROUP: ${FOUNDRY_RESOURCE_GROUP:-}
@@ -65,7 +81,7 @@ services:
       # Container user (auto-detected from the workspace owner when empty)
       HOST_UID: ${HOST_UID:-}
       HOST_GID: ${HOST_GID:-}
-      # Git identity for commits made by the agent
+      # Git identity overrides (take precedence over the mounted .gitconfig)
       GIT_AUTHOR_NAME: ${GIT_AUTHOR_NAME:-}
       GIT_AUTHOR_EMAIL: ${GIT_AUTHOR_EMAIL:-}
       GIT_COMMITTER_NAME: ${GIT_AUTHOR_NAME:-}

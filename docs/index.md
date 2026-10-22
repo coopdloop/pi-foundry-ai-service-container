@@ -7,9 +7,10 @@ No API keys, no `.env` secrets, no token that expires halfway through a long ref
 ```bash
 git clone https://github.com/coopdloop/pi-foundry-ai-service-container.git
 cd pi-foundry-ai-service-container
-make build       # newest pi + Azure CLI
-make doctor      # checks sign-in, RBAC, network, every deployment
-make run         # start coding
+./pi-foundry build     # newest pi + dev tools + Azure CLI   (Windows: .\pi-foundry.cmd build)
+./pi-foundry install   # put pi-foundry on your PATH
+pi-foundry doctor      # checks sign-in, RBAC, network, every deployment
+pi-foundry             # start coding in the current directory
 ```
 
 ## What you get
