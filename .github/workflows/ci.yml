@@ -18,7 +18,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: shellcheck
-        run: shellcheck pi-foundry docker/entrypoint.sh docker/pi-foundry scripts/build.sh tests/smoke.sh
+        run: shellcheck -x pi-foundry docker/entrypoint.sh docker/pi-foundry scripts/build.sh tests/smoke.sh lib/project-slug.sh
       - name: node syntax
         run: |
           node --check lib/foundry.mjs

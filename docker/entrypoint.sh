@@ -63,5 +63,29 @@ for d in /home/pi /home/pi/.pi /home/pi/.pi/agent /home/pi/.azure /home/pi/.cach
 done
 chown -R "$uid:$gid" /home/pi/.azure /home/pi/.cache /home/pi/.local 2>/dev/null || true
 
+# Create this project's session folder, then confirm the unprivileged user can
+# write everywhere pi needs to. Windows (Docker Desktop) mounts ignore chown,
+# so a folder created by an earlier root run can stay root-only. In that case
+# run as root: on those mounts ownership isn't real anyway.
+AGENT=/home/pi/.pi/agent
+# shellcheck source=lib/project-slug.sh
+source /opt/pi-foundry/lib/project-slug.sh
+need_write=("$WS" "$AGENT")
+if slug="$(project_slug)"; then
+  mkdir -p "$AGENT/sessions/$slug" 2>/dev/null || true
+  chown "$uid:$gid" "$AGENT/sessions" "$AGENT/sessions/$slug" 2>/dev/null || true
+  need_write+=("$AGENT/sessions/$slug")
+fi
+for d in "${need_write[@]}"; do
+  if ! gosu pi test -w "$d"; then
+    if [[ -z "${HOST_UID:-}" ]]; then
+      [[ "${FOUNDRY_QUIET:-0}" =~ ^(1|true|yes)$ ]] ||
+        printf '\033[2m[pi-foundry]\033[0m %s is not writable by the container user (usual on Windows mounts); running as root.\n' "$d" >&2
+      run_as_root "$@"
+    fi
+    printf '\033[33m[pi-foundry]\033[0m %s is not writable as HOST_UID=%s; pi may fail to save files there.\n' "$d" "$HOST_UID" >&2
+  fi
+done
+
 export HOME=/home/pi USER=pi
 exec gosu pi /usr/local/bin/pi-foundry "$@"

@@ -200,15 +200,8 @@ theme_args() {
 
 # --- host integration ------------------------------------------------------
 
-# A filesystem-safe id for the host project path, e.g. C:\src\app -> c--src-app
-project_slug() {
-  local p="${HOST_WORKSPACE:-}"
-  [[ -n "$p" ]] || return 1
-  p="$(tr '[:upper:]' '[:lower:]' <<<"$p")"
-  p="${p//[\/\\:]/-}"
-  p="$(sed -E 's/[^a-z0-9._-]+/-/g; s/^-+//; s/-+$//' <<<"$p")"
-  [[ -n "$p" ]] && printf '%s' "$p"
-}
+# shellcheck source=lib/project-slug.sh
+source "$FH/lib/project-slug.sh"
 
 # Copy the host .gitconfig and drop settings that point at host-only programs.
 import_git_config() {
