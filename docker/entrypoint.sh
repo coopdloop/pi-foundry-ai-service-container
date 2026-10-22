@@ -22,6 +22,13 @@ run_as_root() {
   exec /usr/local/bin/pi-foundry "$@"
 }
 
+if [[ "${HOST_OS:-}" == "windows" && -z "${HOST_UID:-}" ]]; then
+  # Windows folders shared by Docker Desktop have no real Linux ownership:
+  # chown is ignored and files pi wrote earlier (auth.json is 0600) may only
+  # be readable by root. Ownership doesn't matter on NTFS, so run as root.
+  run_as_root "$@"
+fi
+
 if [[ "$uid" == "0" && -z "${HOST_UID:-}" ]]; then
   # Root-owned workspace. Two common cases:
   #  - Windows (Docker Desktop): files show as root but are writable by
@@ -75,6 +82,18 @@ if slug="$(project_slug)"; then
   mkdir -p "$AGENT/sessions/$slug" 2>/dev/null || true
   chown "$uid:$gid" "$AGENT/sessions" "$AGENT/sessions/$slug" 2>/dev/null || true
   need_write+=("$AGENT/sessions/$slug")
+fi
+# Files pi saved earlier as another user (auth.json, models-store.json and
+# settings are 0600) must be writable too. Try to take them over first.
+unwritable() {
+  gosu pi find "$AGENT" "$AGENT/sessions" -maxdepth 1 ! -writable -print -quit 2>/dev/null
+}
+if [[ -n "$(unwritable)" ]]; then
+  find "$AGENT" -maxdepth 1 -exec chown "$uid:$gid" {} + 2>/dev/null || true
+  [[ -d "$AGENT/sessions" ]] && find "$AGENT/sessions" -maxdepth 1 -exec chown "$uid:$gid" {} + 2>/dev/null || true
+fi
+if [[ -n "$(unwritable)" ]]; then
+  need_write+=("$(unwritable)")
 fi
 for d in "${need_write[@]}"; do
   if ! gosu pi test -w "$d"; then
