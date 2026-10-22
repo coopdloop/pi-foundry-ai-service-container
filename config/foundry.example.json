@@ -1,0 +1,35 @@
+{
+  "$comment": "Copy to foundry.json in your pi config dir (PI_CONFIG_DIR, default ~/.pi-foundry/agent). Env vars (FOUNDRY_*) override these.",
+
+  "resource": "my-foundry-resource",
+  "resourceGroup": "rg-ai",
+  "subscription": "00000000-0000-0000-0000-000000000000",
+
+  "defaultModel": "gpt-5.5",
+  "exclude": ["gpt-4o-mini"],
+
+  "discover": true,
+  "discoveryTtlSeconds": 600,
+  "includeOtherModels": false,
+  "scope": "https://ai.azure.com/.default",
+
+  "models": [
+    {
+      "deployment": "claude-sonnet",
+      "model": "claude-sonnet-4-6",
+      "format": "Anthropic"
+    },
+    {
+      "deployment": "big-context-gpt",
+      "model": "gpt-5.5",
+      "contextWindow": 400000,
+      "maxTokens": 64000
+    },
+    {
+      "deployment": "gpt-5.5-eu",
+      "model": "gpt-5.5",
+      "endpoint": "https://my-other-resource.services.ai.azure.com",
+      "name": "GPT-5.5 (EU resource)"
+    }
+  ]
+}

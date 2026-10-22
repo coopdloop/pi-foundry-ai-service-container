@@ -1,0 +1,11 @@
+.git
+.github
+docs
+site
+mkdocs.yml
+.env
+.env.*
+*.md
+compose*.yaml
+Makefile
+scripts

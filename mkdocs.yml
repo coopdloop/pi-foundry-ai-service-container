@@ -1,0 +1,80 @@
+site_name: pi-foundry
+site_description: The pi coding agent in Docker, with keyless (Microsoft Entra ID) access to Azure AI Foundry models.
+site_url: https://coopdloop.github.io/pi-foundry-ai-service-container/
+repo_url: https://github.com/coopdloop/pi-foundry-ai-service-container
+repo_name: coopdloop/pi-foundry-ai-service-container
+edit_uri: edit/main/docs/
+copyright: MIT licensed. Not affiliated with Microsoft, Anthropic, OpenAI or Earendil.
+
+theme:
+  name: material
+  icon:
+    logo: material/robot-outline
+    repo: fontawesome/brands/github
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: cyan
+      toggle:
+        icon: material/weather-night
+        name: Dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: cyan
+      toggle:
+        icon: material/weather-sunny
+        name: Light mode
+  features:
+    - navigation.instant
+    - navigation.sections
+    - navigation.top
+    - navigation.footer
+    - content.code.copy
+    - content.code.annotate
+    - content.tabs.link
+    - search.highlight
+
+nav:
+  - Home: index.md
+  - Requirements: requirements.md
+  - Quickstart: getting-started.md
+  - Recommended models: models.md
+  - Using it:
+      - Daily use: usage.md
+      - Permission modes: permissions.md
+      - Authentication: authentication.md
+      - Configuration: configuration.md
+      - Customizing pi: customizing.md
+  - Reference:
+      - How it works: how-it-works.md
+      - Troubleshooting: troubleshooting.md
+      - Security: security.md
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.keys
+  - pymdownx.snippets
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+
+plugins:
+  - search

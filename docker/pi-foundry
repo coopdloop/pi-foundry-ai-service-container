@@ -1,0 +1,265 @@
+#!/usr/bin/env bash
+# pi-foundry: sign in to Azure (keyless), then run pi with the Foundry provider.
+#
+#   pi-foundry [pi args...]    start pi (default)
+#   pi-foundry login           device-code sign-in, saved in the azure volume
+#   pi-foundry logout          clear the saved container sign-in
+#   pi-foundry doctor          check auth, discovery, RBAC and network
+#   pi-foundry models          list the Foundry deployments pi will use
+#   pi-foundry shell           bash inside the container (signed in)
+#   pi-foundry version         print versions
+set -euo pipefail
+
+# Compose passes unset options as empty strings; tools like az treat an empty
+# REQUESTS_CA_BUNDLE or HTTPS_PROXY as a (broken) value. Drop them.
+while IFS= read -r v; do
+  [[ -z "${!v-}" ]] && unset "$v"
+done < <(compgen -e)
+
+FH="${PI_FOUNDRY_HOME:-/opt/pi-foundry}"
+AGENT_DIR="${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}"
+HOST_AZURE="${HOST_AZURE_DIR:-/host-azure}"
+SCOPE="${FOUNDRY_SCOPE:-https://ai.azure.com/.default}"
+AUTH_MODE="${FOUNDRY_AUTH:-auto}"
+VOLUME_AZURE="$HOME/.azure"
+
+# New az versions open an interactive subscription picker after login.
+export AZURE_CORE_LOGIN_EXPERIENCE_V2=off
+
+quiet() { [[ "${FOUNDRY_QUIET:-0}" =~ ^(1|true|yes)$ ]]; }
+log() { quiet || printf '\033[2m[pi-foundry]\033[0m %s\n' "$*" >&2; }
+warn() { printf '\033[33m[pi-foundry]\033[0m %s\n' "$*" >&2; }
+die() { printf '\033[31m[pi-foundry]\033[0m %s\n' "$*" >&2; exit 1; }
+interactive() { [[ -t 0 && -t 1 ]]; }
+
+tenant_args=()
+[[ -n "${AZURE_TENANT_ID:-}" ]] && tenant_args=(--tenant "$AZURE_TENANT_ID")
+
+BOOT_TOKEN=""
+BOOT_EXP=""
+AZ_ERR=""
+
+# Try to get a token with the current AZURE_CONFIG_DIR. Sets BOOT_TOKEN/BOOT_EXP.
+try_token() {
+  local out
+  if out="$(az account get-access-token --scope "$SCOPE" "${tenant_args[@]}" --only-show-errors -o json 2>&1)"; then
+    BOOT_TOKEN="$(jq -r '.accessToken' <<<"$out")"
+    BOOT_EXP="$(jq -r '.expires_on // empty' <<<"$out")"
+    [[ -n "$BOOT_TOKEN" && "$BOOT_TOKEN" != "null" ]]
+  else
+    AZ_ERR="$out"
+    return 1
+  fi
+}
+
+select_subscription() {
+  if [[ -n "${AZURE_SUBSCRIPTION_ID:-}" ]]; then
+    az account set --subscription "$AZURE_SUBSCRIPTION_ID" --only-show-errors \
+      || die "Can't select subscription $AZURE_SUBSCRIPTION_ID with this identity."
+  fi
+}
+
+# --- auth sources --------------------------------------------------------
+
+sp_env_present() {
+  [[ -n "${AZURE_CLIENT_ID:-}" && -n "${AZURE_TENANT_ID:-}" ]] \
+    && [[ -n "${AZURE_CLIENT_SECRET:-}" || -n "${AZURE_FEDERATED_TOKEN_FILE:-}" ]]
+}
+
+login_service_principal() {
+  sp_env_present || die "FOUNDRY_AUTH=service-principal needs AZURE_CLIENT_ID, AZURE_TENANT_ID and AZURE_CLIENT_SECRET (or AZURE_FEDERATED_TOKEN_FILE)."
+  export AZURE_CONFIG_DIR="$HOME/.azure-sp"
+  rm -rf "$AZURE_CONFIG_DIR"; mkdir -p "$AZURE_CONFIG_DIR"
+  if [[ -n "${AZURE_CLIENT_SECRET:-}" ]]; then
+    az login --service-principal -u "$AZURE_CLIENT_ID" -p "$AZURE_CLIENT_SECRET" \
+      --tenant "$AZURE_TENANT_ID" --allow-no-subscriptions --only-show-errors -o none \
+      || die "Service principal sign-in failed."
+  else
+    az login --service-principal -u "$AZURE_CLIENT_ID" --federated-token "$(cat "$AZURE_FEDERATED_TOKEN_FILE")" \
+      --tenant "$AZURE_TENANT_ID" --allow-no-subscriptions --only-show-errors -o none \
+      || die "Workload identity (federated token) sign-in failed."
+  fi
+  export FOUNDRY_AUTH_SOURCE="service-principal"
+  select_subscription
+  try_token || die "Signed in as service principal but token request failed: $AZ_ERR"
+}
+
+login_managed_identity() {
+  export AZURE_CONFIG_DIR="$HOME/.azure-mi"
+  rm -rf "$AZURE_CONFIG_DIR"; mkdir -p "$AZURE_CONFIG_DIR"
+  local id_args=()
+  [[ -n "${AZURE_CLIENT_ID:-}" ]] && id_args=(--client-id "$AZURE_CLIENT_ID")
+  az login --identity "${id_args[@]}" --allow-no-subscriptions --only-show-errors -o none \
+    || die "Managed identity sign-in failed (is this running on an Azure host with a managed identity?)."
+  export FOUNDRY_AUTH_SOURCE="managed-identity"
+  select_subscription
+  try_token || die "Managed identity token request failed: $AZ_ERR"
+}
+
+host_cache_status() {
+  [[ -f "$HOST_AZURE/azureProfile.json" ]] || { echo "none"; return; }
+  if [[ ! -f "$HOST_AZURE/msal_token_cache.json" ]]; then
+    [[ -f "$HOST_AZURE/msal_token_cache.bin" ]] && { echo "encrypted"; return; }
+    echo "none"; return
+  fi
+  # azureProfile.json is written with a UTF-8 BOM.
+  local n
+  n="$(sed '1s/^\xEF\xBB\xBF//' "$HOST_AZURE/azureProfile.json" | jq '.subscriptions | length' 2>/dev/null || echo 0)"
+  [[ "$n" -gt 0 ]] && echo "ok" || echo "empty"
+}
+
+# Copy (never modify) the host's az login into a private, throwaway dir.
+use_host_login() {
+  export AZURE_CONFIG_DIR="$HOME/.azure-host"
+  rm -rf "$AZURE_CONFIG_DIR"; mkdir -p "$AZURE_CONFIG_DIR"
+  local f
+  for f in azureProfile.json msal_token_cache.json msal_http_cache.bin clouds.config config az.json az.sess service_principal_entries.json; do
+    [[ -f "$HOST_AZURE/$f" ]] && cp "$HOST_AZURE/$f" "$AZURE_CONFIG_DIR/$f"
+  done
+  chmod -R go-rwx "$AZURE_CONFIG_DIR"
+  export FOUNDRY_AUTH_SOURCE="host"
+  select_subscription
+  try_token
+}
+
+device_code_login() {
+  export AZURE_CONFIG_DIR="$VOLUME_AZURE"
+  interactive || die "Not signed in and no terminal for device-code login. Run: docker compose run --rm pi login"
+  log "Signing in with a device code (saved in the pi-foundry-azure volume)..."
+  az login --use-device-code "${tenant_args[@]}" --only-show-errors -o none || die "Device-code sign-in failed."
+}
+
+use_volume_login() {
+  export AZURE_CONFIG_DIR="$VOLUME_AZURE"
+  export FOUNDRY_AUTH_SOURCE="container-login"
+  if az account show --only-show-errors -o none 2>/dev/null; then
+    select_subscription
+    try_token && return 0
+    warn "Saved container sign-in can't get a token: ${AZ_ERR%%$'\n'*}"
+  fi
+  device_code_login
+  select_subscription
+  try_token || die "Signed in, but token request for $SCOPE failed: $AZ_ERR"
+}
+
+setup_auth() {
+  case "$AUTH_MODE" in
+    auto)
+      if sp_env_present; then login_service_principal; return; fi
+      case "$(host_cache_status)" in
+        ok)
+          if use_host_login; then return; fi
+          warn "Host az login (~/.azure) didn't produce a token: ${AZ_ERR%%$'\n'*}"
+          warn "Falling back to a container sign-in. Fix the host with 'az login', or run 'docker compose run --rm pi login'."
+          ;;
+        encrypted)
+          log "Host ~/.azure uses an encrypted token cache (Windows); using a container sign-in instead."
+          ;;
+      esac
+      use_volume_login
+      ;;
+    service-principal|sp) login_service_principal ;;
+    managed-identity|msi) login_managed_identity ;;
+    host)
+      [[ "$(host_cache_status)" == "ok" ]] || die "FOUNDRY_AUTH=host but no usable az login at $HOST_AZURE (mount your ~/.azure there)."
+      use_host_login || die "Host az login can't get a token: $AZ_ERR"
+      ;;
+    device-code|container) use_volume_login ;;
+    *) die "Unknown FOUNDRY_AUTH=$AUTH_MODE (use auto, host, device-code, service-principal, managed-identity)." ;;
+  esac
+}
+
+# --- first run -------------------------------------------------------------
+
+seed_agent_dir() {
+  mkdir -p "$AGENT_DIR"
+  [[ -f "$AGENT_DIR/foundry.example.json" ]] || cp "$FH/foundry.example.json" "$AGENT_DIR/foundry.example.json" 2>/dev/null || true
+  # Free Shift+Tab for permission modes (Claude Code style) by moving pi's
+  # thinking-level cycle to Alt+T. Only on first run; an existing
+  # keybindings.json is never modified.
+  if [[ ! -e "$AGENT_DIR/keybindings.json" ]]; then
+    printf '{\n  "app.thinking.cycle": "alt+t"\n}\n' > "$AGENT_DIR/keybindings.json" 2>/dev/null || true
+  fi
+}
+
+# Bundled Foundry themes are always available in /settings. They're applied
+# by default only while you haven't picked a theme yourself; --use-theme
+# never writes settings.json, so any choice you save takes over.
+theme_args() {
+  local t
+  for t in "$FH"/themes/*.json; do THEME_ARGS+=(--theme "$t"); done
+  local want="${FOUNDRY_THEME:-foundry-light/foundry-dark}"
+  [[ "$want" =~ ^(off|none|0|false)$ ]] && return
+  local a
+  for a in "$@"; do [[ "$a" == --use-theme* ]] && return; done
+  if [[ -f "$AGENT_DIR/settings.json" ]] && jq -e 'has("theme")' "$AGENT_DIR/settings.json" >/dev/null 2>&1; then
+    return
+  fi
+  THEME_ARGS+=(--use-theme "$want")
+}
+
+run_pi() {
+  seed_agent_dir
+  setup_auth
+  THEME_ARGS=()
+  theme_args "$@"
+  local ext_args=(-e "$FH/extension")
+  [[ "${FOUNDRY_PERMISSIONS:-on}" =~ ^(off|0|false|no)$ ]] || ext_args+=(-e "$FH/permissions")
+  quiet || log "Signed in via ${FOUNDRY_AUTH_SOURCE}; starting pi with Azure AI Foundry."
+  FOUNDRY_BOOTSTRAP_TOKEN="$BOOT_TOKEN" \
+  FOUNDRY_BOOTSTRAP_EXPIRES_ON="$BOOT_EXP" \
+  FOUNDRY_BOOTSTRAP_SCOPE="$SCOPE" \
+    exec pi "${ext_args[@]}" "${THEME_ARGS[@]}" "$@"
+}
+
+cmd="${1:-}"
+case "$cmd" in
+  login)
+    shift
+    export AZURE_CONFIG_DIR="$VOLUME_AZURE"
+    interactive || die "login needs a terminal: docker compose run --rm pi login"
+    az login --use-device-code "${tenant_args[@]}" --only-show-errors -o none "$@"
+    select_subscription
+    export FOUNDRY_AUTH_SOURCE="container-login"
+    try_token || die "Signed in, but token request for $SCOPE failed: $AZ_ERR"
+    az account show --query "{user:user.name, tenant:tenantId, subscription:name}" -o table
+    log "Saved. Note: with FOUNDRY_AUTH=auto a mounted host ~/.azure takes priority; set FOUNDRY_AUTH=device-code to always use this sign-in."
+    ;;
+  logout)
+    export AZURE_CONFIG_DIR="$VOLUME_AZURE"
+    az logout --only-show-errors 2>/dev/null || true
+    az account clear --only-show-errors 2>/dev/null || true
+    log "Container sign-in cleared."
+    ;;
+  doctor)
+    shift
+    seed_agent_dir
+    setup_auth
+    exec node "$FH/bin/foundry-doctor.mjs" doctor "$@"
+    ;;
+  models)
+    shift
+    setup_auth
+    exec node "$FH/bin/foundry-doctor.mjs" models "$@"
+    ;;
+  shell|bash)
+    shift
+    setup_auth
+    exec bash "$@"
+    ;;
+  version|--foundry-version)
+    printf 'pi        %s\n' "$(pi --version 2>/dev/null)"
+    printf 'az        %s\n' "$(az version --query '"azure-cli"' -o tsv 2>/dev/null)"
+    printf 'node      %s\n' "$(node --version)"
+    ;;
+  help|--foundry-help)
+    sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//'
+    ;;
+  pi)
+    shift
+    run_pi "$@"
+    ;;
+  *)
+    run_pi "$@"
+    ;;
+esac

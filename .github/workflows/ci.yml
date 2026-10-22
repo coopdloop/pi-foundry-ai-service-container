@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    # Weekly: catch breaking changes in the newest pi release early.
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: shellcheck
+        run: shellcheck docker/entrypoint.sh docker/pi-foundry scripts/build.sh tests/smoke.sh
+      - name: node syntax
+        run: |
+          node --check lib/foundry.mjs
+          node --check bin/foundry-doctor.mjs
+          node --check permissions/bash-classifier.mjs
+          node tests/permissions.test.mjs
+
+  image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build with newest pi
+        run: ./scripts/build.sh
+      - name: Smoke test
+        run: ./tests/smoke.sh pi-foundry:local
+
+  docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r docs/requirements.txt
+      - run: mkdocs build --strict
