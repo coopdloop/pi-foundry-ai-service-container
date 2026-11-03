@@ -90,7 +90,9 @@ unwritable() {
 }
 if [[ -n "$(unwritable)" ]]; then
   find "$AGENT" -maxdepth 1 -exec chown "$uid:$gid" {} + 2>/dev/null || true
-  [[ -d "$AGENT/sessions" ]] && find "$AGENT/sessions" -maxdepth 1 -exec chown "$uid:$gid" {} + 2>/dev/null || true
+  if [[ -d "$AGENT/sessions" ]]; then
+    find "$AGENT/sessions" -maxdepth 1 -exec chown "$uid:$gid" {} + 2>/dev/null || true
+  fi
 fi
 if [[ -n "$(unwritable)" ]]; then
   need_write+=("$(unwritable)")
